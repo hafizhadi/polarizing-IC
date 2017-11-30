@@ -40,8 +40,64 @@ def ConvertTxt(filename):
     nx.write_gexf(graph, filename.replace(".txt", ".gexf"))
     return
 
+# Return statistics of an array of sample
+def CalcStats(samples):
+    return dict(zip(['mean', 'max', 'min', 'sdeviation'], [float(sp.mean(samples)), float(sp.nanmax(samples)), float(sp.nanmin(samples)), float(sp.std(samples))]))
+
+# Analyze an initialized graph, return a dictionary
+def AnalyzeGraph(graph):
+    analysisRes = {} # Result
+
+    # Create lists of attributes
+    nCount, nProb = [0] * graph.order(), [0] * graph.order()
+    nDCent = list(nx.algorithms.degree_centrality(graph).values())
+    nCCent = list(nx.algorithms.closeness_centrality(graph).values())
+    nBCent = list(nx.algorithms.betweenness_centrality(graph).values())
+    nECent = list(nx.algorithms.degree_centrality(graph).values())
+    # nECent = list(nx.algorithms.eigenvector_centrality(graph).values())
+
+    eCount, eProb, eDCent, eCCent, eBCent, eECent = [], [], [], [], [], []
+
+    # Calculate some attributes for the nodes
+    for n, d in graph.nodes_iter(data=True):
+        nCount[n] = d["count"] # Degree
+
+        probList = [graph[n][d]["prob"] for d in graph[n]]
+        if len(probList) == 0: probList = [0]
+        meanProb = sum(probList)/len(probList) # Mean edge probability
+        nProb[n] = meanProb
+
+        # Add the information to the graph
+        graph.node[n]["node"] = graph.degree(n)
+        graph.node[n]["prob"] = meanProb
+
+    # Calculate some attributes for the edges
+    for a, b, d in graph.edges_iter(data=True):
+        eCount.append(d["count"])
+        eProb.append(d["prob"])
+        eDCent.append(nDCent[a] + nDCent[b])
+        eCCent.append(nCCent[a] + nCCent[b])
+        eBCent.append(nBCent[a] + nBCent[b])
+        eECent.append(nECent[a] + nECent[b])
+
+    # Calculate stats of each list
+    nKeys = ["nCount", "nProb", "nDCent", "nCCent", "nBCent", "nECent"]
+    nVals = [nCount, nProb, nDCent, nCCent, nBCent, nECent]
+
+    eKeys = ["eCount", "eProb", "eDCent", "eCCent", "eBCent", "eECent"]
+    eVals = [eCount, eProb, eDCent, eCCent, eBCent, eECent]
+    analysisRes["individualStats"] = {}
+    analysisRes["individualStats"]["nodes"] = dict(zip(nKeys, [CalcStats(v) for v in nVals]))
+    analysisRes["individualStats"]["edges"] = dict(zip(eKeys, [CalcStats(v) for v in eVals]))
+
+    # Pearson correlation coefficient of count and attributes
+    analysisRes["nPearson"] = dict(zip(nKeys, sp.corrcoef(nVals)[0]))
+    analysisRes["ePearson"] = dict(zip(eKeys, sp.corrcoef(eVals)[0]))
+
+    return analysisRes
+
 # Take a networkX graph object and do tons of visualization in NetworkX
-def VisualizeGraph(graph):
+def VisualizeGraph(graph, filename):
     plt.figure(figsize=(16, 9))
 
     # Node plots
@@ -101,11 +157,9 @@ def VisualizeGraph(graph):
     plt.annotate("mean= " + str(eCount.mean()) + "\nsize=" + str(len(eCount)), xy=(eCount.mean(), 0.8), xycoords=('data', 'axes fraction'),
                  xytext=(10, 0), textcoords='offset points')
 
-    plt.show()
+    plt.savefig(filename, dpi='figure')
 
     return
-
-VisualizeGraph(LoadGraph(FILENAME))
 
 
 
