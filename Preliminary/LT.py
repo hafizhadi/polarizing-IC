@@ -2,28 +2,38 @@ import scipy.stats as stats
 
 class LT():
     # Initialize graph attributes for LT process
-    def Initialize(self, graph):
+    @staticmethod
+    def Initialize(graph):
         for node, d in graph.nodes_iter(data=True): # Nodes
             d['count'] = 0
             d['infected'] = False
-            d['threshold'] = stats.uniform.rvs() * 4
+            d['threshold'] = stats.uniform.rvs()
 
         for n1, n2, d in graph.edges_iter(data=True): # Edges
-            d['weight'] = stats.uniform.rvs()
+            d['weight'] = stats.beta.rvs(1,2)
+
+    # Reset infected
+    @staticmethod
+    def Reset(graph):
+        for node, d in graph.nodes_iter(data=True): # Nodes
+            d['infected'] = False
 
     # One cascade of the LT model in graph G starting from node a
-    def Cascade(self, graph, seed, seedIdx):
+    @staticmethod
+    def Cascade(graph, seed, seedIdx):
         # Activate seed
         seed['infected'] = True
         seed['count'] += 1
 
         # Do cascade step while a node is still actuve
-        nextChecks = self.LTStep(graph, list(graph[seedIdx].keys()))
+        nextChecks = LT.LTStep(graph, list(graph[seedIdx].keys()))
         while len(nextChecks) > 0:
-            nextChecks = self.LTStep(graph, nextChecks)
+            nextChecks = LT.LTStep(graph, nextChecks)
+
 
     # One step of an LT cascade in graph G
-    def LTStep(self, graph, checks):
+    @staticmethod
+    def LTStep(graph, checks):
         nextChecks = []
 
         for n in checks: # Check if weight exceeds threshold this iteration

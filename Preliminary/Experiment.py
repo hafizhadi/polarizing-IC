@@ -16,7 +16,7 @@ import yappi
 N = 1000 # Number of nodes in the graph
 NExp = 1 # Number of individual experiments to do
 NCascade = 1000 # Number of cascade
-MODE = 'IC'
+MODE = 'LT'
 
 nBA = 2 # N parameter of the Barabasi-Albert Preferential attachment model
 
@@ -32,6 +32,7 @@ def DoExperiment(nExp, graph, mode):
                 'nCCent': {},
                 'nBCent': {},
                 'nECent': {},
+                'nThres': {}
             },
             'edges': {
                 'eCount': {},
@@ -40,6 +41,7 @@ def DoExperiment(nExp, graph, mode):
                 'eCCent': {},
                 'eBCent': {},
                 'eECent': {},
+                'eWeight': {}
             }
         },
         'ePearson': {
@@ -48,7 +50,8 @@ def DoExperiment(nExp, graph, mode):
             'eDCent': 0,
             'eCCent': 0,
             'eBCent': 0,
-            'eECent': 0
+            'eECent': 0,
+            'eWeight': 0
         },
         'nPearson': {
             'nCount': 0,
@@ -56,7 +59,8 @@ def DoExperiment(nExp, graph, mode):
             'nDCent': 0,
             'nCCent': 0,
             'nBCent': 0,
-            'nECent': 0
+            'nECent': 0,
+            'nThres': 0
         }
     }
 
@@ -67,22 +71,20 @@ def DoExperiment(nExp, graph, mode):
     }[mode]()
 
     for i in range(nExp):
-        graph = exp.Initialize(graph)
+        exp.Initialize(graph)
 
         # Do IC process
         for j in range(NCascade):
             index = random.randrange(N)
             exp.Cascade(graph, graph.node[index], index)
-
-        # Make charts
-        gstats.VisualizeGraph(graph, filename + str(i + 1) + ".png")
+            exp.Reset(graph)
 
         # Get experiment data
         singleExperimentData = {}
         singleExperimentData["Network"] = {}
         singleExperimentData["Network"]["Nodes"] = dict([(str(i[0]), i[1]) for i in graph.nodes(data=True)])
         singleExperimentData["Network"]["Edges"] = dict([(str(i[0]) + "-" + str(i[1]), i[2]) for i in graph.edges(data=True)])
-        singleExperimentData["Result"] = gstats.AnalyzeGraph(graph)
+        singleExperimentData["Result"] = gstats.AnalyzeGraph(graph, mode)
 
         # Aggregate data
         for keys in singleExperimentData["Result"]["individualStats"]["nodes"].keys():
@@ -103,7 +105,7 @@ def DoExperiment(nExp, graph, mode):
         print(i)
 
         # Make charts
-        gstats.VisualizeGraph(graph, filename + str(i+1) + ".png")
+        gstats.VisualizeGraph(graph, filename + str(i+1) + ".png", mode)
 
     # Obtain average
     for attr in totalExperimentData["individualStats"]["nodes"].values():
