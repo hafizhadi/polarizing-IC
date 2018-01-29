@@ -1,31 +1,30 @@
 import random
 
 import numpy as np
-import scipy.stats as stats
 
 
-class IC:
+class ICPol:
     # Constants
     INCREMENT = 0.01
 
     # Initialize graph attributes for ICPol process
     @staticmethod
     def Initialize(graph):
-        for node, d in graph.nodes_iter(data=True):  # Nodes
-            d["q"] = stats.beta.rvs(0.3, 2)  # INITIAL DISTRIBUTION OF POLARIZATION
+        for node, d in graph.nodes(data=True):  # Nodes
+            d["q"] = random.random()  # INITIAL DISTRIBUTION OF POLARIZATION
             d["acc"] = False  # Does node accept current item
             d["accCount"] = 0  # How many time a node has accepted an item
             d["prop"] = False  # Does node propagate current item
             d["propCount"] = 0  # How many time a node has propagated an item
 
-        for n1, n2, d in graph.edges_iter(data=True):  # Edges
-            d["p"] = stats.beta.rvs(0.3, 2)  # INITIAL DISTRIBUTION OF CONNECTION STRENGTH
+        for n1, n2, d in graph.edges(data=True):  # Edges
+            d["c"] = random.random()  # INITIAL DISTRIBUTION OF CONNECTION STRENGTH
             d["flowCount"] = 0  # How many time an edge has been use for propagation
 
     # Reset accept and propagate
     @staticmethod
     def Reset(graph):
-        for node, d in graph.nodes_iter(data=True):  # Nodes
+        for node, d in graph.nodes(data=True):  # Nodes
             d['acc'] = False
             d['prop'] = False
 
@@ -40,9 +39,9 @@ class IC:
         seed["propCount"] += 1
 
         # Do cascade step while a node is still active
-        nextActives = IC.ICStep(graph, [seedIdx])
+        nextActives = ICPol.ICStep(graph, [seedIdx], i)
         while len(nextActives) > 0:
-            nextActives = IC.ICStep(graph, nextActives, i)
+            nextActives = ICPol.ICStep(graph, nextActives, i)
 
     # One step of an ICPol cascade in graph G
     @staticmethod
@@ -50,35 +49,38 @@ class IC:
         nextActives = []
 
         for n in actives:
-            for neighbor in graph.neighbors_iter(n):
+            for neighbor in graph.neighbors(n):
                 if (not graph.node[neighbor]["acc"]):  # For all of non-accepting neighbors
 
                     # TEST FOR ACCEPTANCE
-                    if (IC.AccTest(graph.node[neighbor]["q"], i, graph.edge[n][neighbor]["p"])):
+                    if (ICPol.AccTest(graph.node[neighbor]["q"], i, graph[n][neighbor]["c"])):
                         graph.node[neighbor]["acc"] = True
                         graph.node[neighbor]["accCount"] += 1
-                        graph.edge[n][neighbor]["propCount"] += 1
+                        graph[n][neighbor]["flowCount"] += 1
 
                         # UPDATE ATTRIBUTES FOR ACCEPT
-                        graph.node[neighbor]["q"] += np.sign(i - graph.node[neighbor]["q"]) * IC.INCREMENT
-                        graph.edge[n][neighbor]["p"] += IC.INCREMENT
+                        graph.node[neighbor]["q"] = np.clip(
+                            graph.node[neighbor]["q"] + (np.sign(i - graph.node[neighbor]["q"]) * ICPol.INCREMENT), 0.1,
+                            0.9)
+                        graph[n][neighbor]["c"] = np.clip(graph[n][neighbor]["c"] + ICPol.INCREMENT, 0, 1)
 
                         # TEST FOR PROPAGATION
-                        if (IC.PropTest(graph.node[neighbor]["q"], i)):
+                        if (ICPol.PropTest(graph.node[neighbor]["q"], i)):
                             graph.node[neighbor]["prop"] = True
                             graph.node[neighbor]["propCount"] += 1
                             nextActives.append(neighbor)
                     else:
                         # UPDATE ATTRIBUTES FOR NOT ACCEPT
-                        graph.node[neighbor]["q"] += np.sign(graph.node[neighbor]["q"]) * IC.INCREMENT
-                        graph.edge[n][neighbor]["p"] -= IC.INCREMENT
+                        graph.node[neighbor]["q"] = np.clip(
+                            graph.node[neighbor]["q"] + (np.sign(graph.node[neighbor]["q"] - 0.5) * 0), 0.1, 0.9)
+                        graph[n][neighbor]["c"] = np.clip(graph[n][neighbor]["c"] - ICPol.INCREMENT, 0, 1)
 
         return nextActives
 
     # Formula for acceptance
     @staticmethod
-    def AccTest(q, i, p):
-        return (random.random() < p * (abs(q - i)))
+    def AccTest(q, i, c):
+        return (random.random() < c * (abs(q - i)))
 
     # Formula for propagation
     @staticmethod

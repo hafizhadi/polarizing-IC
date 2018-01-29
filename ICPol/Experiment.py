@@ -5,16 +5,17 @@ from collections import Counter
 
 import GraphStats as gstats
 import networkx as nx
+import scipy.stats as stats
 import yappi
 
 import ICPol
 
 # CONSTANTS
-N = 1000  # Number of nodes in the graph
+N = 500  # Number of nodes in the graph
 NExp = 1  # Number of individual experiments to do
-NCascade = 1000  # Number of cascade
+NCascade = 50000  # Number of cascade
 
-nBA = 2  # N parameter of the Barabasi-Albert Preferential attachment model
+nBA = 5  # N parameter of the Barabasi-Albert Preferential attachment model
 
 filename = "Result/Exp# " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "#" + str(N) + "N#" + str(
     NExp) + "Iter#" + str(NCascade) + "Casc#"
@@ -29,8 +30,8 @@ def DoExperiment(nExp, graph):
                 'propCount': {}
             },
             'edges': {
-                'p': {},
-                'propCount': {}
+                'c': {},
+                'flowCount': {}
             }
         }
     }
@@ -44,7 +45,7 @@ def DoExperiment(nExp, graph):
         # Do IC process
         for j in range(NCascade):
             index = random.randrange(N)
-            i = random.random()
+            i = stats.beta.rvs(2, 2)
             exp.Cascade(graph, graph.node[index], index, i)
             exp.Reset(graph)
 
@@ -67,19 +68,11 @@ def DoExperiment(nExp, graph):
                 Counter(totalExperimentData["individualStats"]["edges"][keys]) + Counter(
                     singleExperimentData["Result"]["individualStats"]["edges"][keys]))
 
-        for k in singleExperimentData["Result"]["ePearson"].keys():
-            totalExperimentData["ePearson"][k] += singleExperimentData["Result"]["ePearson"][k]
-
-        for l in singleExperimentData["Result"]["nPearson"].keys():
-            totalExperimentData["nPearson"][l] += singleExperimentData["Result"]["nPearson"][l]
-
         with open(filename + str(i + 1) + ".txt", 'w') as outfile:
             js.dump(singleExperimentData, outfile)
 
-        print(i)
-
         # Make charts
-        gstats.VisualizeGraph(graph, filename + str(i + 1) + ".png", mode)
+        gstats.VisualizeGraph(graph, filename + str(i + 1) + ".png")
 
     # Obtain average
     for attr in totalExperimentData["individualStats"]["nodes"].values():
