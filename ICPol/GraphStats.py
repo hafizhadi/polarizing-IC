@@ -4,119 +4,155 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 
+COLOR = ['deeppink', 'crimson', 'darkorange', 'olive', 'green', 'indigo', 'gold', 'teal', 'dodgerblue', 'maroon',
+         'dimgray']
 
 # Return statistics of an array of sample
-def CalcStats(samples):
+def DistStats(samples):
     return dict(zip(['mean', 'max', 'min', 'sdeviation'],
                     [float(sp.mean(samples)), float(sp.nanmax(samples)), float(sp.nanmin(samples)),
                      float(sp.std(samples))]))
 
 
 # Analyze an initialized graph, return a dictionary
-def AnalyzeGraph(graph):
-    analysisRes = {}  # Result
-
+def AnalyzeAttributes(graph):
     # Create lists of attributes
-    q = []
-    rejCount = []
-    accCount = []
-    propCount = []
-    wEdgeHom = []
-    histQ = []
-
-    flowCount = []
-    c = []
+    nodeAttributes = {key: [] for key, value in graph.nodes[list(graph.nodes())[0]].items()}
+    edgeAttributes = {key: [] for key, value in graph.edges[list(graph.edges())[0]].items()}
 
     # Collect node data
     for n, d in graph.nodes(data=True):
-        q.append(d["q"])
-        rejCount.append(d['rejCount'])
-        accCount.append(d['accCount'])
-        propCount.append(d['propCount'])
-        wEdgeHom.append(d['wEdgeHom'])
-        histQ.append(d['histQ'])
+        for key, value in d.items():
+            nodeAttributes[key].append(value)
 
-        # Add the information to the graph
-        graph.node[n]['degree'] = graph.degree(n)
-
-    # Calculate some attributes for the edges
+    # Collect edge data
     for a, b, d in graph.edges(data=True):
-        flowCount.append(d['flowCount'])
-        c.append(d['c'])
+        for key, value in d.items():
+            edgeAttributes[key].append(value)
 
-        # Calculate stats of each list
-    nKeys = ['q', 'rejCount', 'accCount', 'propCount', 'wEdgeHom', 'histQ']
-    nVals = [q, rejCount, accCount, propCount, wEdgeHom, histQ]
-
-    eKeys = ['flowCount', 'c']
-    eVals = [flowCount, c]
-
-    analysisRes["individualStats"] = {}
-    analysisRes["individualStats"]["nodes"] = dict(zip(nKeys, [CalcStats(v) for v in nVals]))
-    analysisRes["individualStats"]["edges"] = dict(zip(eKeys, [CalcStats(v) for v in eVals]))
+    # Calculate stats of each list
+    analysisRes = {}
+    analysisRes["nodes"] = {key: DistStats(value) for key, value in nodeAttributes.items()}
+    analysisRes["edges"] = {key: DistStats(value) for key, value in edgeAttributes.items()}
 
     return analysisRes
 
 
-# Take a networkX graph object and do histogram visualizations
-def VisualizeDistribution(graph, nodePlots, edgePlots, info, filename):
-    plt.figure(figsize=(10, 10))
-    names = nodePlots + edgePlots
-
-    # Prepare data
-    plotData = []
-    for name in nodePlots:
+# Take a networkX graph object and get a list containing all the values for selected attributes
+def GetValues(graph, nodeAtt, edgeAtt):
+    attrValues = []
+    for name in nodeAtt:
         if (name == 'Degree'):
-            plotData.append(np.array([graph.degree(x) for x in graph.nodes()]))
+            attrValues.append((name, np.asarray([graph.degree(x) for x in graph.nodes()])))
         else:
-            plotData.append(np.array([data[name] for node, data in graph.nodes(data=True)]))
+            attrValues.append((name, np.asarray([data[name] for node, data in graph.nodes(data=True)])))
 
-    for name in edgePlots:
-        plotData.append(np.array([data[name] for a, b, data in graph.edges(data=True)]))
+    for name in edgeAtt:
+        attrValues.append((name, np.asarray([data[name] for a, b, data in graph.edges(data=True)])))
+
+    return attrValues
+
+
+# Take a list of (name, values) dictionary and make histograms
+def VisHistogram(values, filename, nExp=1):
+    font = {'size': 25}
+    plt.rc('font', **font)
+
+    plt.figure(figsize=(30, 30))
 
     # Calculate dimension of plot
-    amount = len(plotData) + int(info != "")
+    amount = len(values)
     row = round(math.sqrt(amount) + 0.5)
-    column = round((amount / row))
+    column = round((amount / row) + 0.5)
 
     # Plot using iteration
     i = 1
-    for data in plotData:
+    for name, value in values:
 
         plt.subplot(row, column, i)
 
-        if (names[i - 1] == 'q'):
+        if (name == 'q'):
             plt.xlim((-1, 1))
-            plt.title("Polarization")
+            plt.title("Polarization", y=1.05)
             plt.ylabel("# Nodes")
-        elif (names[i - 1] == 'c'):
+        elif (name == 'c'):
             plt.xlim((0, 1))
-            plt.title("Connection Strength")
+            plt.title("Connection Strength", y=1.05)
             plt.ylabel("# Edges")
         else:
-            plt.title(names[i - 1])
+            plt.title(name, y=1.05)
             plt.ylabel("Count")
 
-        plt.hist(data, 100)
-        plt.axvline(data.mean(), color='r', linewidth=1, linestyle='dashed')
-        plt.annotate("mean= " + str(data.mean()) + "\nsize=" + str(len(data)), xy=(data.mean(), 0.8),
+        plt.hist(value, 50, color=COLOR[i])
+        plt.grid()
+
+        locs, labels = plt.yticks()
+        newLocs = [str(x / nExp) for x in locs]
+        plt.yticks(locs, newLocs)
+
+        plt.axvline(value.mean(), color='r', linewidth=1, linestyle='dashed')
+        plt.annotate("mean= " + str(round(value.mean(), 3)) + "\nsize=" + str(len(value) / nExp),
+                     xy=(value.mean(), 0.8),
                      xycoords=('data', 'axes fraction'),
                      xytext=(10, 0), textcoords='offset points')
 
         i += 1
 
-    # Write Experiment Data
-    plt.annotate(info, xy=(1, 0), xycoords=('axes fraction'), xytext=(50, -20), textcoords='offset points')
-
+    plt.tight_layout()
     plt.savefig(filename, dpi='figure')
     plt.close()
 
     return
 
 
+# Take a list of (name, values) dictionary and make histograms
+def Vis2(histData, filename):
+    font = {'size': 25}
+    plt.rc('font', **font)
+
+    plt.figure(figsize=(30, 30))
+
+    # Calculate dimension of plot
+    amount = len(histData)
+    row = round(math.sqrt(amount) + 0.5)
+    column = round((amount / row) + 0.5)
+
+    # Plot using iteration
+    i = 1
+    for name, value in histData:
+
+        plt.subplot(row, column, i)
+
+        if (name == 'q'):
+            plt.xlim((-1, 1))
+            plt.title("Polarization", y=1.05)
+            plt.ylabel("# Nodes")
+        elif (name == 'c'):
+            plt.xlim((0, 1))
+            plt.title("Connection Strength", y=1.05)
+            plt.ylabel("# Edges")
+        else:
+            plt.title(name, y=1.05)
+            plt.ylabel("Count")
+
+        width = 0.7 * (value[1][1] - value[1][0])
+        center = (value[1][:-1] + value[1][1:]) / 2
+        plt.bar(center, value[0], align='center', width=width, color=COLOR[i])
+        plt.grid()
+
+        i += 1
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi='figure')
+    plt.close()
+
+    return
+
 # Take a dictionary of list of values over time and plot
-def VisualizeGrowth(data, info, filename):
-    plt.figure(figsize=(16, 16))
+def VisGrowth(data, info, filename):
+    font = {'size': 25}
+    plt.rc('font', **font)
+    plt.figure(figsize=(30, 30))
 
     # Calculate dimension of plot
     amount = len(data.items())
@@ -127,12 +163,14 @@ def VisualizeGrowth(data, info, filename):
     i = 1
     for key, value in data.items():
         plt.subplot(row, column, i)
-        plt.title(key)
+        plt.title(key, y=1.05)
         plt.xlabel('#Cascade')
 
-        plt.plot(range(len(value)), value)
+        plt.plot(range(len(value)), value, linewidth=3, linestyle='dashed', marker='s', markersize=6, color=COLOR[i])
+        plt.grid()
         i += 1
 
+    plt.tight_layout()
     plt.savefig(filename, dpi='figure')
     plt.close()
 
