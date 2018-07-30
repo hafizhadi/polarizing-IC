@@ -1,7 +1,9 @@
 import datetime
+import getopt
 import json as js
 import os
 import random
+import sys
 from collections import Counter
 
 import GraphStats as gstats
@@ -13,14 +15,14 @@ import yappi
 import ICPol
 
 # EXPERIMENT VARIABLES
-N_EXP = 50  # Number of individual experiments to do
+N_EXP = 1  # Number of individual experiments to do
 
 # Cascade
 N_CASCADE = 10000  # Number of cascade
 # I_DIST = st.uniform(loc=-1, scale=2)
 
-# I_DIST = st.truncnorm(-0.5, 0.5)
-I_DIST = st.beta(0.25, 0.25, loc=-1, scale=2)
+BETA = 1
+I_DIST = st.beta(BETA, BETA, loc=-1, scale=2)
 
 # Snapshot
 SNAP_MODE = True
@@ -30,7 +32,7 @@ SNAP_TIMINGS = np.concatenate(([1], np.arange(0, 10001, 100), np.arange(10001, 5
 # Tracking
 TRACK_MODE = True
 TRACKED_VALUES = ['QMod', 'QComm', 'QMean', 'QHom', 'cascHom', 'cascSize']
-TRACK_INTERVAL = 50
+TRACK_INTERVAL = 100
 
 DATA_TEMPLATE = {
     'analyzedAttr': {
@@ -72,6 +74,8 @@ nWS = 20  # N parameter of the Watts Strogatz small world model
 bWS = 0.2  # Rewiring probability of the Watts Strogatz small world model
 nBA = 10  # N parameter of the Barabasi-Albert preferential attachment model
 
+INFO = ''
+
 
 # Return corresponding graph from string
 def GetGraph(name):
@@ -87,6 +91,8 @@ def GetGraph(name):
 # Return string containing information for the experiment
 def ExperimentInfo(icPol, graphName):
     expInfo = 'EXPERIMENT INFORMATION\n----------------------\n'
+    expInfo += INFO + '\n'
+    expInfo += 'BETA = ' + str(BETA) + '\n'
     expInfo += 'Time: ' + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '\n'
     try:
         expInfo += 'Network: ' + str(icPol.graph.order()) + ' nodes ' + str(icPol.graph.size()) + ' edges ' + {
@@ -119,10 +125,10 @@ def WriteResults(expData, attrValue, traceData, count):
         js.dump(traceData, outfile)
 
     # Distribution histograms
-    gstats.VisHistogram(attrValue, FILENAME + '/' + str(count) + '-Dist' + ".png")
+        # gstats.VisHistogram(attrValue, FILENAME + '/' + str(count) + '-Dist' + ".png")
 
     # Growth plots
-    gstats.VisGrowth(expData['trackedVal'], '', FILENAME + '/' + str(count) + '-Growth' + ".png")
+        # gstats.VisGrowth(expData['trackedVal'], '', FILENAME + '/' + str(count) + '-Growth' + ".png")
 
 # Main experiment function
 def DoExperiment(nExp, icPol, graphName):
@@ -155,7 +161,7 @@ def DoExperiment(nExp, icPol, graphName):
 
         # Do cascades
         for j in range(N_CASCADE):
-            print(j + 1)
+            print('Exp' + str(i) + ' Cascade ' + str(j + 1))
             icPol.Reset()
 
             # Cascade
@@ -165,11 +171,10 @@ def DoExperiment(nExp, icPol, graphName):
             cascadeData = icPol.Cascade(seedKey, inf)
 
             # Record cascade trace
-            meanEdgeHom = icPol.MeanWeightedEdgeHomogeinity(icPol.graph.edge_subgraph(cascadeData))
             allCascadeData['#'].append(j + 1)
             allCascadeData['i'].append(inf)
             allCascadeData['trace'].append(cascadeData)
-            allCascadeData['hom'].append(meanEdgeHom)
+            # allCascadeData['hom'].append(meanEdgeHom)
 
             # Take a snap of the network between cascades
             if (j + 1 in SNAP_TIMINGS):
@@ -188,6 +193,7 @@ def DoExperiment(nExp, icPol, graphName):
                         expData['trackedVal'][name].append(Q[name])
 
                 if ('cascHom' in TRACKED_VALUES):
+                    meanEdgeHom = icPol.MeanWeightedEdgeHomogeinity(icPol.graph.edge_subgraph(cascadeData))
                     expData['trackedVal']['cascHom'].append(meanEdgeHom)
 
                 if ('cascSize' in TRACKED_VALUES):
@@ -277,17 +283,54 @@ def DoExperiment(nExp, icPol, graphName):
 
 
 # MAIN
-yappi.start()
+if __name__ == "__main__":
+    # Parse command line args
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], '', ['alpha=', 'betaDist=', 'nExp=', 'nCasc=', 'info=', 'range='])
+    except getopt.GetoptError:
+        print('Error: wrong flag or missing value')
+        sys.exit(2)
 
-for i in range(len(GRAPH_LIST)):
-    G = GetGraph(GRAPH_LIST[i])
-    icPol = ICPol.ICPol(G)
-    FILENAME = "Result/" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for opt, arg in opts:
+        if opt == '--alpha':
+            ICPol.ICPol.ALPHA = float(arg)
+        elif opt == '--betaDist':
+            I_DIST = st.beta(float(arg), float(arg), loc=-1, scale=2)
+        elif opt == '--nExp':
+            N_EXP = int(arg)
+        elif opt == '--nCasc':
+            N_CASCADE = int(arg)
+        elif opt == '--range':
+            ICPol.ICPol.RANGE = float(arg)
+        elif opt == '--info':
+            INFO = arg
 
-    DoExperiment(N_EXP, icPol, i)
-    with open(FILENAME + "/Information.txt", 'w') as outfile:
-        outfile.write(ExperimentInfo(icPol, GRAPH_LIST[i]))
-        outfile.write('\nYAPPI LOG\n---------')
-        stat = yappi.get_func_stats().print_all(out=outfile)
+    # Start Experiment
+    for b in [0.5]:
+        BETA = b
+        I_DIST = st.beta(BETA, BETA, loc=-1, scale=2)
 
-yappi.stop()
+        for a in [0.5, 0.75, 1]:
+            ICPol.ICPol.ALPHA = a
+
+            for r in [0.30, 0.35, 0.40]:
+                ICPol.ICPol.RANGE = r
+
+                yappi.start()
+
+                for i in range(len(GRAPH_LIST)):
+                    G = GetGraph(GRAPH_LIST[i])
+                    print(G.size())
+
+                    icPol = ICPol.ICPol(G)
+                    FILENAME = "Result/" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    DoExperiment(N_EXP, icPol, i)
+                    with open(FILENAME + "/Information.txt", 'w') as outfile:
+                        outfile.write(ExperimentInfo(icPol, GRAPH_LIST[i]))
+                        outfile.write('\nYAPPI LOG\n---------')
+                        stat = yappi.get_func_stats().print_all(out=outfile)
+
+                    print(icPol.graph.size())
+
+                yappi.stop()

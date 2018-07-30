@@ -8,8 +8,8 @@ import scipy.stats as st
 
 class ICPol:
     # Constants
-    Q_ETA = 0.01  # Volatility of network w.r.t. to Q
-    C_ETA = 0.01  # Volatility of network w.r.t. to C
+    Q_ETA = 0.005  # Volatility of network w.r.t. to Q
+    C_ETA = 0.005  # Volatility of network w.r.t. to C
 
     Q_DIST = st.uniform(loc=-1, scale=2)  # INITIAL DISTRIBUTION OF Q
     C_DIST = st.uniform()  # INITIAL DISTRIBUTION OF C
@@ -18,8 +18,9 @@ class ICPol:
     CONNECTION_THRESHOLD = 0.75
 
     # Dynamics Parameter
+    RANGE = 0.15
     ALPHA = 0.5
-    CONFIDENCE = 0.2
+    CONNECT = 0.1
 
     # METHODS
     def __init__(self, graph):
@@ -29,6 +30,8 @@ class ICPol:
     # Return information on model
     def ModelInfo(self):
         info = 'MODEL INFORMATION\n-----------------\n'
+        info += 'ALPHA = ' + str(ICPol.ALPHA)
+        info += 'RANGE = ' + str(ICPol.RANGE)
         return info
 
     # CASCADE METHODS
@@ -86,6 +89,8 @@ class ICPol:
         trace = []
 
         for n in actives:  # Every active nodes propagates information to neighbors
+            disconnectList = []
+
             for neighbor in self.graph.neighbors(n):
 
                 # Neighbors who haven't propagate information considers doing so
@@ -98,26 +103,69 @@ class ICPol:
                         # Update connection strength
                         self.graph[n][neighbor]['successCount'] += 1
                         self.graph.node[neighbor]['acceptCount'] += 1
-                        self.graph.node[neighbor]['q'] += (np.sign(i - self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+
+                        # MODEL 3
+                        if ((abs(self.graph.node[neighbor]['q'] - i) <= ICPol.RANGE)):
+                            self.graph.node[neighbor]['q'] += (np.sign(self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+                        else:
+                            self.graph.node[neighbor]['q'] += (
+                                np.sign(i - self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+
+                        # self.graph.node[neighbor]['q'] += (np.sign(i - self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+
                         self.graph[n][neighbor]['c'] += ICPol.Q_ETA
+
+                        # MODEL 4
+
+                        # # Pick a random non neighbor node from trace
+                        # cList = list(set([pair[0] for pair in trace if not self.graph.has_edge(neighbor, pair[0])]))
+                        #
+                        # if(len(cList) > 0):
+                        #     candidate = cList[random.randint(0, len(cList) - 1)]
+                        #
+                        #     # Connect test
+                        #     if(self.ConnectCheck(self.graph.node[neighbor]['q'], self.graph.node[candidate]['q'], self.graph.degree(candidate))):
+                        #         # print('ADD {0} {1}'.format(neighbor, candidate))
+                        #         self.graph.add_edge(neighbor, candidate, c=0.5, successCount=0, failCount=0)
 
                         # Add to next actives and trace
                         nextActives.append(neighbor)
                         trace.append((n, neighbor))
+
                     else:
                         self.graph[n][neighbor]['failCount'] += 1
                         self.graph.node[neighbor]['rejectCount'] += 1
-                        self.graph.node[neighbor]['q'] -= (np.sign(i - self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+
+                        # MODEL 2
+                        # self.graph.node[neighbor]['q'] -= (np.sign(i - self.graph.node[neighbor]['q']) * ICPol.Q_ETA)
+
                         self.graph[n][neighbor]['c'] -= ICPol.Q_ETA
 
-                    self.graph.node[neighbor]['q'] = float(np.clip(self.graph.node[neighbor]['q'], -1, 1))
+                        # # MODEL 4
+                        # # Disconnect test
+                        # if(self.DisconnectCheck(self.graph.node[n]['q'], self.graph.node[neighbor]['q'], self.graph[n][neighbor]['c'])):
+                        #     disconnectList.append(neighbor)
+
                     self.graph[n][neighbor]['c'] = float(np.clip(self.graph[n][neighbor]['c'], 0, 1))
+                    self.graph.node[neighbor]['q'] = float(np.clip(self.graph.node[neighbor]['q'], -1, 1))
+
+                    # for neighbor in disconnectList:
+                    #     self.graph.remove_edge(n, neighbor)
 
         return [nextActives, trace]
 
     # Check for acceptance
     def AcceptCheck(self, q, i, c):
         return random.random() < (((1 - ICPol.ALPHA) * c + ICPol.ALPHA * (1 - (abs(q - i) / 2))))
+
+    # Check for connection
+    def ConnectCheck(self, q, q2, degree):
+        return random.random() < ICPol.CONNECT * (1 - (abs(q - q2) / 2)) * (
+            degree / max([d for n, d in self.graph.degree()]))
+
+    # Check for disconnection
+    def DisconnectCheck(self, q, q2, c):
+        return random.random() < ICPol.CONNECT * (abs(q - q2) / 2) * (1 - c)
 
     # Generalized Logistic function with range [0,1]
     def GenLogistic(self, x, Q, B):
