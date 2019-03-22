@@ -1,9 +1,8 @@
+import copy
 import datetime
-import getopt
 import json as js
 import os
 import random
-import sys
 from collections import Counter
 
 import GraphStats as gstats
@@ -14,68 +13,6 @@ import yappi
 
 import ICPol
 
-# EXPERIMENT VARIABLES
-N_EXP = 1  # Number of individual experiments to do
-
-# Cascade
-N_CASCADE = 10000  # Number of cascade
-# I_DIST = st.uniform(loc=-1, scale=2)
-
-BETA = 1
-I_DIST = st.beta(BETA, BETA, loc=-1, scale=2)
-
-# Snapshot
-SNAP_MODE = True
-SNAP_TIMINGS = np.concatenate(([1], np.arange(0, 10001, 100), np.arange(10001, 50001, 1000),
-                               np.arange(50001, 100001, 5000)))
-
-# Tracking
-TRACK_MODE = True
-TRACKED_VALUES = ['QMod', 'QComm', 'QMean', 'QHom', 'cascHom', 'cascSize']
-TRACK_INTERVAL = 100
-
-DATA_TEMPLATE = {
-    'analyzedAttr': {
-        'nodes': {
-            'q': {},
-            'acceptCount': {},
-            'rejectCount': {}
-        },
-        'edges': {
-            'c': {},
-            'successCount': {},
-            'failCount': {}
-        }
-    },
-    'trackedVal': {
-        'QMod': [],
-        'QComm': [],
-        'QMean': [],
-        'QHom': [],
-        'cascHom': [],
-        'cascSize': []
-    }
-}
-
-# Visualization
-NODE_VIS_ATTR = ['Degree', 'q', 'acceptCount', 'rejectCount']
-EDGE_VIS_ATTR = ['c', 'successCount', 'failCount']
-
-# Graph
-# List of graph to experiment on; is a list of strings between the following: ER, WS, BA, or filename
-GRAPH_LIST = [
-    '../Datasets/LFR Benchmark Networks/100/0.1/network.dat'
-    # 'ER', 'BA', 'WS'
-]
-
-GRAPH_ORDER = 100  # Number of nodes in the graph
-pER = 0.04  # Edge probability of the Erdos Renyi random model
-nWS = 20  # N parameter of the Watts Strogatz small world model
-bWS = 0.2  # Rewiring probability of the Watts Strogatz small world model
-nBA = 10  # N parameter of the Barabasi-Albert preferential attachment model
-
-INFO = ''
-
 
 # Return corresponding graph from string
 def GetGraph(name):
@@ -83,15 +20,20 @@ def GetGraph(name):
         return {
             'ER': nx.erdos_renyi_graph(GRAPH_ORDER, pER),
             'WS': nx.watts_strogatz_graph(GRAPH_ORDER, nWS, bWS),
-            'BA': nx.barabasi_albert_graph(GRAPH_ORDER, nBA)
+            'BA': nx.barabasi_albert_graph(GRAPH_ORDER, nBA),
+            'COMPLETE': nx.complete_graph(GRAPH_ORDER)
         }[name]
     except KeyError:
-        return nx.read_adjlist(name, nodetype=int)
+        if (name.endswith('gexf')):
+            G = nx.read_gexf(name)
+        else:
+            G = nx.read_adjlist(name, nodetype=int)
+
+        return G
 
 # Return string containing information for the experiment
 def ExperimentInfo(icPol, graphName):
     expInfo = 'EXPERIMENT INFORMATION\n----------------------\n'
-    expInfo += INFO + '\n'
     expInfo += 'BETA = ' + str(BETA) + '\n'
     expInfo += 'Time: ' + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '\n'
     try:
@@ -113,7 +55,6 @@ def ExperimentInfo(icPol, graphName):
     expInfo += icPol.ModelInfo()
     return expInfo
 
-
 # Dump the result of a single experiment to file
 def WriteResults(expData, attrValue, traceData, count):
     # Attribute stats
@@ -125,15 +66,15 @@ def WriteResults(expData, attrValue, traceData, count):
         js.dump(traceData, outfile)
 
     # Distribution histograms
-        # gstats.VisHistogram(attrValue, FILENAME + '/' + str(count) + '-Dist' + ".png")
+    gstats.VisHistogram(attrValue, FILENAME + '/' + str(count) + '-Dist' + ".png")
 
     # Growth plots
-        # gstats.VisGrowth(expData['trackedVal'], '', FILENAME + '/' + str(count) + '-Growth' + ".png")
+    gstats.VisGrowth(expData['trackedVal'], '', FILENAME + '/' + str(count) + '-Growth' + ".png")
 
 # Main experiment function
-def DoExperiment(nExp, icPol, graphName):
+def DoExperiment(nExp, icPol, fromBlank=True, graphs=[]):
     # Variables for averaged data
-    totalExpData = DATA_TEMPLATE.copy()
+    totalExpData = copy.deepcopy(DATA_TEMPLATE)
     totalHistData = []
     totalAttrValues = []
 
@@ -143,117 +84,235 @@ def DoExperiment(nExp, icPol, graphName):
         os.makedirs(dirname)
 
     # Do experiment
-    for i in range(nExp):
-        icPol.Initialize()
+    if len(graphs) == 0:
+        for i in range(nExp):
+            icPol.Initialize()
 
-        # Container for single experiment data
-        expData = {
-            'analyzedAttr': {},
-            'trackedVal': dict([(name, []) for name in TRACKED_VALUES])
-        }
-        iList = []
-        allCascadeData = {
-            '#': [],
-            'i': [],
-            'trace': [],
-            'hom': []
-        }
+            # Container for single experiment data
+            expData = {
+                'analyzedAttr': {},
+                'trackedVal': dict([(name, []) for name in TRACKED_VALUES])
+            }
+            iList = []
+            allCascadeData = {
+                '#': [],
+                'i': [],
+                'trace': [],
+                'hom': []
+            }
 
-        # Do cascades
-        for j in range(N_CASCADE):
-            print('Exp' + str(i) + ' Cascade ' + str(j + 1))
-            icPol.Reset()
+            # Do cascades
+            for j in range(N_CASCADE):
+                print('Exp' + str(i) + ' Cascade ' + str(j + 1))
+                icPol.Reset()
 
-            # Cascade
-            inf = I_DIST.rvs()  # Opinion score of this cascade's information
-            iList.append(inf)
-            seedKey = list(icPol.graph.nodes())[random.randrange(len(list(icPol.graph.nodes())))]  # Seed node
-            cascadeData = icPol.Cascade(seedKey, inf)
+                # Cascade
+                inf = I_DIST.rvs()  # Opinion score of this cascade's information
+                iList.append(inf)
+                seedKey = list(icPol.graph.nodes())[random.randrange(len(list(icPol.graph.nodes())))]  # Seed node
+                cascadeData = icPol.Cascade(seedKey, inf)
 
-            # Record cascade trace
-            allCascadeData['#'].append(j + 1)
-            allCascadeData['i'].append(inf)
-            allCascadeData['trace'].append(cascadeData)
-            # allCascadeData['hom'].append(meanEdgeHom)
+                # Record cascade trace
+                allCascadeData['#'].append(j + 1)
+                allCascadeData['i'].append(inf)
+                allCascadeData['trace'].append(cascadeData)
+                # allCascadeData['hom'].append(meanEdgeHom)
 
-            # Take a snap of the network between cascades
-            if (j + 1 in SNAP_TIMINGS):
-                if (SNAP_MODE):
-                    nx.write_gexf(icPol.graph, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Snap ' + '.gexf')
-                    # attV = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
-                    # attV.append(('i', np.asarray(iList)))
-                    # gstats.VisHistogram(attV, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Dist' + ".png")
+                # Take a snap of the network between cascades
+                if (j + 1 in SNAP_TIMINGS):
+                    if (SNAP_MODE):
+                        nx.write_gexf(icPol.graph, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Snap ' + '.gexf')
+                        # attV = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
+                        # attV.append(('i', np.asarray(iList)))
+                        # gstats.VisHistogram(attV, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Dist' + ".png")
 
-            # Track values between cascades
-            if (((j + 1) == 1) or (((j + 1) % TRACK_INTERVAL) == 0)):
-                if (TRACK_MODE):
-                    # Track measure growth
-                    Q = icPol.MeasurePolarizations(TRACKED_VALUES)
-                    for name in [i for i in TRACKED_VALUES if i.startswith('Q')]:
-                        expData['trackedVal'][name].append(Q[name])
+                # Track values between cascades
+                if (((j + 1) == 1) or (((j + 1) % TRACK_INTERVAL) == 0)):
+                    if (TRACK_MODE):
+                        # Track measure growth
+                        Q = icPol.MeasurePolarizations(TRACKED_VALUES)
+                        for name in [i for i in TRACKED_VALUES if i.startswith('Q')]:
+                            expData['trackedVal'][name].append(Q[name])
 
-                if ('cascHom' in TRACKED_VALUES):
-                    meanEdgeHom = icPol.MeanWeightedEdgeHomogeinity(icPol.graph.edge_subgraph(cascadeData))
-                    expData['trackedVal']['cascHom'].append(meanEdgeHom)
+                    if ('cascHom' in TRACKED_VALUES):
+                        meanEdgeHom = icPol.MeanWeightedEdgeHomogeinity(icPol.graph.edge_subgraph(cascadeData))
+                        expData['trackedVal']['cascHom'].append(meanEdgeHom)
 
-                if ('cascSize' in TRACKED_VALUES):
-                    expData['trackedVal']['cascSize'].append(len(cascadeData))
+                    if ('cascSize' in TRACKED_VALUES):
+                        expData['trackedVal']['cascSize'].append(len(cascadeData))
 
-        # Analyze results
-        expData['analyzedAttr'] = gstats.AnalyzeAttributes(icPol.graph)
-        attrValues = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
-        attrValues.append(('i', np.asarray(iList)))
-        histData = []
+            # Analyze results
+            expData['analyzedAttr'] = gstats.AnalyzeAttributes(icPol.graph)
+            attrValues = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
+            attrValues.append(('i', np.asarray(iList)))
+            histData = []
 
-        # Aggregate data
-        if (len(totalAttrValues) == 0):
-            totalAttrValues = attrValues
-        else:
-            for atrIdx in range(len(totalAttrValues)):
-                totalAttrValues[atrIdx] = (
-                totalAttrValues[atrIdx][0], np.concatenate((totalAttrValues[atrIdx][1], attrValues[atrIdx][1])))
-
-        if (len(totalHistData) == 0):
-            histData = [(name, np.histogram(vals, 25, range=(-1, 1))) if (name == 'q' or name == 'i') else (
-            (name, np.histogram(vals, 25, range=(0, 1))) if name == 'c' else (name, np.histogram(vals, 25))) for
-                        name, vals in attrValues]
-            totalHistData = histData
-        else:
-            histData = [()] * len(totalHistData)
-
-            for atrIdx in range(len(totalHistData)):
-                attrHistData = np.histogram(attrValues[atrIdx][1], totalHistData[atrIdx][1][1])
-                histData[atrIdx] = (totalHistData[atrIdx][0], attrHistData)
-                totalHistData[atrIdx] = (totalHistData[atrIdx][0], (
-                [sum(x) for x in zip(totalHistData[atrIdx][1][0], attrHistData[0])], attrHistData[1]))
-
-        for key in totalExpData['trackedVal'].keys():
-            if (len(totalExpData['trackedVal'][key]) == 0):
-                totalExpData['trackedVal'][key] = [0] * len(expData['trackedVal'][key])
-
-            totalExpData['trackedVal'][key] = [sum(x) for x in
-                                               zip(totalExpData['trackedVal'][key], expData['trackedVal'][key])]
-
-        for key in totalExpData['analyzedAttr']["nodes"].keys():
-            if (len(totalExpData['analyzedAttr']["nodes"][key].keys()) == 0):
-                totalExpData['analyzedAttr']["nodes"][key] = expData['analyzedAttr']['nodes'][key].copy()
+            # Aggregate data
+            if (len(totalAttrValues) == 0):
+                totalAttrValues = attrValues
             else:
-                count = Counter()
-                count.update(Counter(expData['analyzedAttr']['nodes'][key]))
-                count.update(Counter(totalExpData['analyzedAttr']["nodes"][key]))
-                totalExpData['analyzedAttr']["nodes"][key] = dict(count)
+                for atrIdx in range(len(totalAttrValues)):
+                    totalAttrValues[atrIdx] = (
+                        totalAttrValues[atrIdx][0], np.concatenate((totalAttrValues[atrIdx][1], attrValues[atrIdx][1])))
 
-        for key in totalExpData['analyzedAttr']["edges"].keys():
-            if (len(totalExpData['analyzedAttr']['edges'][key].keys()) == 0):
-                totalExpData['analyzedAttr']["edges"][key] = expData['analyzedAttr']["edges"][key].copy()
+            if (len(totalHistData) == 0):
+                histData = [(name, np.histogram(vals, 25, range=(-1, 1))) if (name == 'q' or name == 'i') else (
+                    (name, np.histogram(vals, 25, range=(0, 1))) if name == 'c' else (name, np.histogram(vals, 25))) for
+                            name, vals in attrValues]
+                totalHistData = histData
             else:
-                count = Counter()
-                count.update(Counter(expData['analyzedAttr']['edges'][key]))
-                count.update(Counter(totalExpData['analyzedAttr']['edges'][key]))
-                totalExpData['analyzedAttr']['edges'][key] = dict(count)
+                histData = [()] * len(totalHistData)
 
-        # Write results to file
-        WriteResults(expData, attrValues, allCascadeData, i + 1)
+                for atrIdx in range(len(totalHistData)):
+                    attrHistData = np.histogram(attrValues[atrIdx][1], totalHistData[atrIdx][1][1])
+                    histData[atrIdx] = (totalHistData[atrIdx][0], attrHistData)
+                    totalHistData[atrIdx] = (totalHistData[atrIdx][0], (
+                        [sum(x) for x in zip(totalHistData[atrIdx][1][0], attrHistData[0])], attrHistData[1]))
+
+            for key in totalExpData['trackedVal'].keys():
+                if (len(totalExpData['trackedVal'][key]) == 0):
+                    totalExpData['trackedVal'][key] = [0] * len(expData['trackedVal'][key])
+
+                totalExpData['trackedVal'][key] = [sum(x) for x in
+                                                   zip(totalExpData['trackedVal'][key], expData['trackedVal'][key])]
+
+            for key in totalExpData['analyzedAttr']["nodes"].keys():
+                if (len(totalExpData['analyzedAttr']["nodes"][key].keys()) == 0):
+                    totalExpData['analyzedAttr']["nodes"][key] = expData['analyzedAttr']['nodes'][key].copy()
+                else:
+                    count = Counter()
+                    count.update(Counter(expData['analyzedAttr']['nodes'][key]))
+                    count.update(Counter(totalExpData['analyzedAttr']["nodes"][key]))
+                    totalExpData['analyzedAttr']["nodes"][key] = dict(count)
+
+            for key in totalExpData['analyzedAttr']["edges"].keys():
+                if (len(totalExpData['analyzedAttr']['edges'][key].keys()) == 0):
+                    totalExpData['analyzedAttr']["edges"][key] = expData['analyzedAttr']["edges"][key].copy()
+                else:
+                    count = Counter()
+                    count.update(Counter(expData['analyzedAttr']['edges'][key]))
+                    count.update(Counter(totalExpData['analyzedAttr']['edges'][key]))
+                    totalExpData['analyzedAttr']['edges'][key] = dict(count)
+
+            # Write results to file
+            WriteResults(expData, attrValues, allCascadeData, i + 1)
+    else:
+        i = 0
+
+        for graph in graphs:
+            icPol = ICPol.ICPol(graph, initQC=False)
+            icPol.Initialize(initQC=fromBlank)
+
+            # Container for single experiment data
+            expData = {
+                'analyzedAttr': {},
+                'trackedVal': dict([(name, []) for name in TRACKED_VALUES])
+            }
+            iList = []
+            allCascadeData = {
+                '#': [],
+                'i': [],
+                'trace': [],
+                'hom': []
+            }
+
+            # Do cascades
+            for j in range(N_CASCADE):
+                print('Exp' + str(i) + ' Cascade ' + str(j + 1))
+                icPol.Reset()
+
+                # Cascade
+                inf = I_DIST.rvs()  # Opinion score of this cascade's information
+                iList.append(inf)
+                seedKey = list(icPol.graph.nodes())[random.randrange(len(list(icPol.graph.nodes())))]  # Seed node
+                cascadeData = icPol.Cascade(seedKey, inf)
+
+                # Record cascade trace
+                allCascadeData['#'].append(j + 1)
+                allCascadeData['i'].append(inf)
+                allCascadeData['trace'].append(cascadeData)
+                # allCascadeData['hom'].append(meanEdgeHom)
+
+                # Take a snap of the network between cascades
+                if (j + 1 in SNAP_TIMINGS):
+                    if (SNAP_MODE):
+                        nx.write_gexf(icPol.graph, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Snap ' + '.gexf')
+                        # attV = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
+                        # attV.append(('i', np.asarray(iList)))
+                        # gstats.VisHistogram(attV, FILENAME + '/' + str(i + 1) + '-' + str(j + 1) + '-Dist' + ".png")
+
+                # Track values between cascades
+                if (((j + 1) == 1) or (((j + 1) % TRACK_INTERVAL) == 0)):
+                    if (TRACK_MODE):
+                        # Track measure growth
+                        Q = icPol.MeasurePolarizations(TRACKED_VALUES)
+                        for name in [i for i in TRACKED_VALUES if i.startswith('Q')]:
+                            expData['trackedVal'][name].append(Q[name])
+
+                    if ('cascHom' in TRACKED_VALUES):
+                        meanEdgeHom = icPol.MeanWeightedEdgeHomogeinity(icPol.graph.edge_subgraph(cascadeData))
+                        expData['trackedVal']['cascHom'].append(meanEdgeHom)
+
+                    if ('cascSize' in TRACKED_VALUES):
+                        expData['trackedVal']['cascSize'].append(len(cascadeData))
+
+            # Analyze results
+            expData['analyzedAttr'] = gstats.AnalyzeAttributes(icPol.graph)
+            attrValues = gstats.GetValues(icPol.graph, NODE_VIS_ATTR, EDGE_VIS_ATTR)
+            attrValues.append(('i', np.asarray(iList)))
+            histData = []
+
+            # Aggregate data
+            if (len(totalAttrValues) == 0):
+                totalAttrValues = attrValues
+            else:
+                for atrIdx in range(len(totalAttrValues)):
+                    totalAttrValues[atrIdx] = (
+                        totalAttrValues[atrIdx][0], np.concatenate((totalAttrValues[atrIdx][1], attrValues[atrIdx][1])))
+
+            if (len(totalHistData) == 0):
+                histData = [(name, np.histogram(vals, 25, range=(-1, 1))) if (name == 'q' or name == 'i') else (
+                    (name, np.histogram(vals, 25, range=(0, 1))) if name == 'c' else (name, np.histogram(vals, 25))) for
+                            name, vals in attrValues]
+                totalHistData = histData
+            else:
+                histData = [()] * len(totalHistData)
+
+                for atrIdx in range(len(totalHistData)):
+                    attrHistData = np.histogram(attrValues[atrIdx][1], totalHistData[atrIdx][1][1])
+                    histData[atrIdx] = (totalHistData[atrIdx][0], attrHistData)
+                    totalHistData[atrIdx] = (totalHistData[atrIdx][0], (
+                        [sum(x) for x in zip(totalHistData[atrIdx][1][0], attrHistData[0])], attrHistData[1]))
+
+            for key in totalExpData['trackedVal'].keys():
+                if (len(totalExpData['trackedVal'][key]) == 0):
+                    totalExpData['trackedVal'][key] = [0] * len(expData['trackedVal'][key])
+
+                totalExpData['trackedVal'][key] = [sum(x) for x in
+                                                   zip(totalExpData['trackedVal'][key], expData['trackedVal'][key])]
+
+            for key in totalExpData['analyzedAttr']["nodes"].keys():
+                if (len(totalExpData['analyzedAttr']["nodes"][key].keys()) == 0):
+                    totalExpData['analyzedAttr']["nodes"][key] = expData['analyzedAttr']['nodes'][key].copy()
+                else:
+                    count = Counter()
+                    count.update(Counter(expData['analyzedAttr']['nodes'][key]))
+                    count.update(Counter(totalExpData['analyzedAttr']["nodes"][key]))
+                    totalExpData['analyzedAttr']["nodes"][key] = dict(count)
+
+            for key in totalExpData['analyzedAttr']["edges"].keys():
+                if (len(totalExpData['analyzedAttr']['edges'][key].keys()) == 0):
+                    totalExpData['analyzedAttr']["edges"][key] = expData['analyzedAttr']["edges"][key].copy()
+                else:
+                    count = Counter()
+                    count.update(Counter(expData['analyzedAttr']['edges'][key]))
+                    count.update(Counter(totalExpData['analyzedAttr']['edges'][key]))
+                    totalExpData['analyzedAttr']['edges'][key] = dict(count)
+
+            # Write results to file
+            WriteResults(expData, attrValues, allCascadeData, i + 1)
+
+            i += 1
 
     # Obtain averaged data
     for i in range(len(totalHistData)):
@@ -283,54 +342,124 @@ def DoExperiment(nExp, icPol, graphName):
 
 
 # MAIN
-if __name__ == "__main__":
-    # Parse command line args
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], '', ['alpha=', 'betaDist=', 'nExp=', 'nCasc=', 'info=', 'range='])
-    except getopt.GetoptError:
-        print('Error: wrong flag or missing value')
-        sys.exit(2)
 
-    for opt, arg in opts:
-        if opt == '--alpha':
-            ICPol.ICPol.ALPHA = float(arg)
-        elif opt == '--betaDist':
-            I_DIST = st.beta(float(arg), float(arg), loc=-1, scale=2)
-        elif opt == '--nExp':
-            N_EXP = int(arg)
-        elif opt == '--nCasc':
-            N_CASCADE = int(arg)
-        elif opt == '--range':
-            ICPol.ICPol.RANGE = float(arg)
-        elif opt == '--info':
-            INFO = arg
+# DEFAULT CONSTANTS
 
-    # Start Experiment
-    for b in [0.5]:
-        BETA = b
-        I_DIST = st.beta(BETA, BETA, loc=-1, scale=2)
+# Snapshot
+SNAP_MODE = True
+SNAP_TIMINGS = np.concatenate(([1], np.arange(0, 100001, 100)))
 
-        for a in [0.5, 0.75, 1]:
-            ICPol.ICPol.ALPHA = a
+# Tracking
+TRACK_MODE = True
+TRACKED_VALUES = ['QMean', 'QHom', 'cascHom', 'cascSize']
+TRACK_INTERVAL = 100
 
-            for r in [0.30, 0.35, 0.40]:
-                ICPol.ICPol.RANGE = r
+DATA_TEMPLATE = {
+    'analyzedAttr': {
+        'nodes': {
+            'q': {},
+            'acceptCount': {},
+            'rejectCount': {}
+        },
+        'edges': {
+            'c': {},
+            'successCount': {},
+            'failCount': {}
+        }
+    },
+    'trackedVal': {
+        'QMean': [],
+        'QHom': [],
+        'cascHom': [],
+        'cascSize': []
+    }
+}
 
-                yappi.start()
+# Visualization
+NODE_VIS_ATTR = ['Degree', 'q', 'acceptCount', 'rejectCount']
+EDGE_VIS_ATTR = ['c', 'successCount', 'failCount']
 
-                for i in range(len(GRAPH_LIST)):
-                    G = GetGraph(GRAPH_LIST[i])
-                    print(G.size())
+# List of graph to experiment on; is a list of strings between the following: ER, WS, BA, or filename
+GRAPH_LIST = [
+    '../Datasets/LFR Benchmark Networks/250/network.dat'
+]
 
-                    icPol = ICPol.ICPol(G)
-                    FILENAME = "Result/" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# Graph parameters for graphs generated with networkx
+GRAPH_ORDER = 250  # Number of nodes in the graph
+pER = 0.08  # Edge probability of the Erdos Renyi random model
+nWS = 20  # N parameter of the Watts Strogatz small world model
+bWS = 0.2  # Rewiring probability of the Watts Strogatz small world model
+nBA = 10  # N parameter of the Barabasi-Albert preferential attachment model
 
-                    DoExperiment(N_EXP, icPol, i)
-                    with open(FILENAME + "/Information.txt", 'w') as outfile:
-                        outfile.write(ExperimentInfo(icPol, GRAPH_LIST[i]))
-                        outfile.write('\nYAPPI LOG\n---------')
-                        stat = yappi.get_func_stats().print_all(out=outfile)
+# ALL EXPERIMENT PARAMETERS DETERMINED HERE
+N_EXP = 50  # Number of individual experiments to do
+N_CASCADE = 10001  # Number of cascade
 
-                    print(icPol.graph.size())
+for bVal in [0.5]:
+    BETA = bVal
+    I_DIST = st.beta(BETA, BETA, loc=-1, scale=2)
 
-                yappi.stop()
+    for cDistVal in [ICPol.ICPol.C_INIT_SCALE]:
+        ICPol.ICPol.C_INIT_SCALE = cDistVal
+        ICPol.ICPol.C_DIST = st.uniform(scale=cDistVal)
+
+        for qEtaVal in [ICPol.ICPol.Q_ETA]:
+            ICPol.ICPol.Q_ETA = qEtaVal
+
+            for cEtaVal in [ICPol.ICPol.C_ETA]:
+                ICPol.ICPol.C_ETA = cEtaVal
+
+                for commInitVal in [ICPol.ICPol.COMM_INIT]:
+                    ICPol.ICPol.COMM_INIT = commInitVal
+
+                    for qDistVal in [ICPol.ICPol.Q_INIT_BETA]:
+                        ICPol.ICPol.Q_INIT_BETA = qDistVal
+                        ICPol.ICPol.Q_DIST = st.beta(ICPol.ICPol.Q_INIT_BETA, ICPol.ICPol.Q_INIT_BETA, loc=-1, scale=2)
+                        ICPol.ICPol.Q_DIST_HALF = st.beta(1, ICPol.ICPol.Q_INIT_BETA, loc=-1, scale=2)
+
+                        for seedVal in [ICPol.ICPol.SEED_C]:
+                            ICPol.ICPol.SEED_C = seedVal
+
+                            for funcVal in ['LINEAR']:
+                                ICPol.ICPol.SELECTIVE_FUNCTION = funcVal
+
+                                for ratioVal in ['DEFAULT']:
+                                    ICPol.ICPol.SELECTIVE_RATIO = ratioVal
+
+                                    for logMinVal in [ICPol.ICPol.LOG_MIN]:
+                                        ICPol.ICPol.LOG_MIN = logMinVal
+
+                                        for logMaxVal in [ICPol.ICPol.LOG_MAX]:
+                                            ICPol.ICPol.LOG_MAX = logMaxVal
+
+                                            for logQVal in [ICPol.ICPol.LOG_Q]:
+                                                ICPol.ICPol.LOG_Q = logQVal
+
+                                                for logBVal in [ICPol.ICPol.LOG_B]:
+                                                    ICPol.ICPol.LOG_B = logBVal
+
+                                                    for logPlusVal in [0.1, 0.2, 0.3, 0.4, 0.5]:
+                                                        ICPol.ICPol.LOG_MU = logPlusVal
+
+                                                        for dampVal in [ICPol.ICPol.DAMP]:
+                                                            ICPol.ICPol.DAMP = dampVal
+
+                                                            for graphName in GRAPH_LIST:
+                                                                G = GetGraph(graphName)
+                                                                print(G.order(), G.size())
+
+                                                                yappi.start()
+                                                                icPol = ICPol.ICPol(G)
+                                                                FILENAME = "Result/" + datetime.datetime.now().strftime(
+                                                                    "%Y-%m-%d %H:%M:%S")
+
+                                                                # DO EXPERIMENT
+                                                                DoExperiment(N_EXP, icPol)
+                                                                with open(FILENAME + "/Information.txt",
+                                                                          'w') as outfile:
+                                                                    outfile.write(ExperimentInfo(icPol, graphName))
+                                                                    outfile.write('\nYAPPI LOG\n---------')
+                                                                    stat = yappi.get_func_stats().print_all(out=outfile)
+
+                                                                print(icPol.graph.size())
+                                                                yappi.stop()

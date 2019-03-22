@@ -36,8 +36,8 @@ def AnalyzeAttributes(graph):
 
     # Calculate stats of each list
     analysisRes = {}
-    analysisRes["nodes"] = {key: DistStats(value) for key, value in nodeAttributes.items()}
-    analysisRes["edges"] = {key: DistStats(value) for key, value in edgeAttributes.items()}
+    analysisRes["nodes"] = {key: DistStats(value) for key, value in nodeAttributes.items() if key != 'label'}
+    analysisRes["edges"] = {key: DistStats(value) for key, value in edgeAttributes.items() if key != 'id'}
 
     return analysisRes
 

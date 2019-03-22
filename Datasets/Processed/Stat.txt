@@ -1,0 +1,57 @@
+baltimore 28291 1441
+beefban 6026 799
+ff 63672 3899
+germanwings 7329 2111
+gunsense 103840 1821
+indiana 24328 946
+indiasdaughter 9480 1542
+jurassicworld 31802 4395
+leadersdebate 344088 9566
+mothersday 14160 2225
+nemtsov 46529 2156
+nepal 42833 4242
+netanyahu 297136 4292
+onedirection 20275 3151
+russia_march 16471 1189
+sxsw 91356 4558
+ukraine 84035 3383
+ultralive 16070 2113
+
+clustering coefficient
+
+../Datasets/Processed/POLARIZED/baltimore/baltimore-PROCESSED.txt
+Assort: 2.8611284601742617
+../Datasets/Processed/POLARIZED/beefban/beefban-PROCESSED.txt
+Assort: 3.337608727701607
+../Datasets/Processed/POLARIZED/gunsense/gunsense-PROCESSED.txt
+Assort: 2.3416918611317294
+../Datasets/Processed/POLARIZED/indiana/indiana-PROCESSED.txt
+Assort: 2.5304271955434747
+../Datasets/Processed/POLARIZED/indiasdaughter/indiasdaughter-PROCESSED.txt
+Assort: 3.6144106064164037
+../Datasets/Processed/POLARIZED/leadersdebate/leadersdebate-PROCESSED.txt
+Assort: 2.5473604186459733
+../Datasets/Processed/POLARIZED/nemtsov/nemtsov-PROCESSED.txt
+Assort: 2.6917355763229147
+../Datasets/Processed/POLARIZED/netanyahu/netanyahu-PROCESSED.txt
+Assort: 2.3415373602131773
+../Datasets/Processed/POLARIZED/russia_march/russia_march-PROCESSED.txt
+Assort: 2.7983989035292653
+../Datasets/Processed/POLARIZED/ukraine/ukraine-PROCESSED.txt
+Assort: 3.1042389741171155
+../Datasets/Processed/NOT POLARIZED/ultralive-PROCESSED.txt
+Assort: 2.4643503778915514
+../Datasets/Processed/NOT POLARIZED/germanwings-PROCESSED.txt
+Assort: 4.267222694933557
+../Datasets/Processed/NOT POLARIZED/mothersday-PROCESSED.txt
+Assort: 4.3645299490744485
+../Datasets/Processed/NOT POLARIZED/onedirection-PROCESSED.txt
+Assort: 3.2265784104819333
+../Datasets/Processed/NOT POLARIZED/nepal-PROCESSED.txt
+Assort: 4.038236336181198
+../Datasets/Processed/NOT POLARIZED/jurassicworld-PROCESSED.txt
+Assort: 3.9976671052624764
+../Datasets/Processed/NOT POLARIZED/ff-PROCESSED.txt
+Assort: 3.6959985398368844
+../Datasets/Processed/NOT POLARIZED/sxsw-PROCESSED.txt
+Assort: 2.6378229135643556
